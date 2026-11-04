@@ -40,38 +40,18 @@ O dataset reúne escores de preferência ($0 \text{ a } 100$) atribuídos por $N
 
 ---
 
-## 🔬 4. Pipeline Metodológico e Arquitetura do Estudo
+## 🔬 4. Análise Exploratória & Teste de Hipóteses
 
-```
-[ Raw Data Input ] ──> [ Preprocessing & NA Imputation ]
-                              │
-                              ▼
-[ Multivariate Normality & Assumption Tests (Shapiro-Wilk, KMO, Bartlett) ]
-                              │
-                              ▼
-[ Latent Space Extraction (Principal Components / Eigen-Decomposition) ]
-                              │
-                              ▼
-[ Factor Rotation (Varimax Orthogonal Transformation) ]
-                              │
-                              ▼
-[ Feature Selection Iteration (Pruning Cross-Loaded Features: REPUTAT) ]
-                              │
-                              ▼
-[ Final Latent Embeddings & Factor Scores (Bartlett Method) ]
-```
-
-### 4.1. Análise Exploratória & Teste de Hipóteses
 1. **Normalidade Multivariada:** Avaliada pelos testes de **Shapiro-Wilk Multivariado** e **Royston**. A rejeição da hipótese nula de normalidade ($p < 0.05$) fundamentou a escolha da **Decomposição por Componentes Principais (PC)** como método de extração não paramétrico robusto.
 2. **Adequação Amostral (KMO & Bartlett):**
    * **KMO Overall:** $0.67$ (confirmando a existência de variância compartilhada latente).
    * **Teste de Esfericidade de Bartlett:** Rejeição de $H_0: \mathbf{R} = \mathbf{I}$ ($p \approx 0$), garantindo a existência de correlações significativas inter-variáveis.
    * **Detecção de Anomalia:** A variável `REPUTAT` apresentou $MSA = 0.40$ (insuficiente), indicando isolamento estrutural.
 
-### 4.2. Critério de Retenção de Fatores (Kaiser-Guttman)
+### 4.1. Critério de Retenção de Fatores (Kaiser-Guttman)
 Aplicou-se o critério dos autovalores superiores à unidade ($\lambda_i \ge 1.0$), determinando a retenção de **2 Fatores Latentes Principais**, capazes de resumir a informação estrutural do sistema.
 
-### 4.3. Rotação do Espaço Fatorial (Varimax)
+### 4.2. Rotação do Espaço Fatorial (Varimax)
 A aplicação da rotação ortogonal **Varimax** redistribuiu a variância explicada, simplificando a estrutura de cargas fatoriais ($\mathbf{L}$) e eliminando ambiguidades de associação entre variáveis e fatores.
 
 ---
