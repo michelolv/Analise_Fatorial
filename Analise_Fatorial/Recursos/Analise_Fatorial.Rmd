@@ -1,0 +1,810 @@
+---
+title: "Análise Fatorial - Estatística Multivariada"
+author: "Michel Lima de Oliveira"
+date: "2025-03-28"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r}
+rm(list=ls(all=T)) # limpa diretório
+
+set.seed(1000) # gerador de números aleatórios
+```
+
+```{r setup, echo = FALSE, fig.keep = 'high', results = 'hide', message = FALSE, fig.pos = 'H', fig.align = 'center', out.extra = '', warning=FALSE, error = FALSE}
+# Instala pacotes necessários para realização de uma análise fatorial exploratória
+pacman::p_load("MVN", "mclust", "goft", "psych", "rela", "MVar.pt", 
+               "Hmisc", "factoextra", "GPArotation", "tidyverse", "corrr", 
+               "igraph", "ggraph", "corrplot", "grid", "ggplot2", "gt")
+```
+
+
+```{r setup, echo = FALSE, fig.keep = 'high', results = 'hide', message = FALSE, fig.pos = 'H', fig.align = 'center', out.extra = '', warning=FALSE, error = FALSE}
+install.packages("https://cran.r-project.org/src/contrib/Archive/rela/rela_4.1.tar.gz", repos = NULL, type = "source")
+```
+
+Para a base de dados você deverá aplicar a análise fatorial com o objetivo de explorar a estrutura de correlações entre as variáveis e identificar fatores comuns subjacentes. Para isso, você deverá realizar, inicialmente, uma boa análise descritiva, seguida pela análise fatorial, devendo ser considerados:
+
+  1. Diferentes métodos de estimação;
+  2. Diferentes tipos de rotação dos fatores;
+  3. A extração dos escores fatoriais.
+  
+Na execução da análise, você deverá atentar para:
+  (a) O número de fatores a serem considerados (use diferentes critérios);
+  (b) A matriz de cargas fatoriais;
+  (c) As comunalidades e variâncias específicas;
+  (d) As matrizes de correlações residuais;
+  (e) As proporções da variância total explicada (individual e conjuntamente) pelos fatores;
+  (f) A interpretação dos fatores (e possível atribuição de nomes) segundo a constituição das cargas fatoriais;
+  (g) Cálculo de medidas de qualidade de ajuste.
+  
+  OBS.: é importante comparar os resultados obtidos mediante diferentes estratégias de estimação e rotação e verificar eventuais problemas dos métodos aplicados à análise da base.
+
+Base: 200 consumidores foram solicitados a dar escores de 0 a 100 quanto à importância de sete diferentes qualidades na decisão pela compra de um pack com seis garrafas de cerveja.
+
+As variáveis (qualidades) são as seguintes:
+  • COST: custo do pack;
+  • SIZE: volume de cerveja no pack;
+  • ALCOHOL: porcentagem de álcool na bebida;
+  • REPUTATION: reputação da marca;
+  • COLOR: cor da bebida;
+  • AROMA: aroma da bebida;
+  • TASTE: sabor da bebida.
+
+```{r}
+# Download dos dados no formato Documento de Texto
+dados <- read.table("AnaFatBeer.txt")
+```
+
+```{r}
+# Atribui nomes corretos às variáveis (V1:V9)
+nomes_variaveis = unlist(dados[1, ]) # extrai os nomes das variáveis da primeira linha
+nomes_variaveis
+
+dados = dados[-1, ] # remove a primeira linha (que contém os nomes)
+
+colnames(dados) = nomes_variaveis # atribui os nomes corretos às colunas
+
+dados = dplyr::select(dados, 9, 8, 1:7) # reordena as variáveis
+
+# converte os dados para tipo numérico
+dados[] = lapply(dados, function(x) if(is.character(x)) as.numeric(x) else x)
+
+# Remove variáveis interpretáveis
+dados_filtrados = dados %>% 
+  dplyr::select(3:9)
+```
+
+# ANÁLISE DESCRITIVA
+
+```{r}
+dados_filtrados
+head(dados_filtrados)
+summary(dados_filtrados) # resumo estatístico
+sqrt(diag(var(dados_filtrados))) # desvio padrão de cada variável
+plot(dados_filtrados)
+```
+
+```{r}
+# Valores ausentes (NAs)
+cat("Quantidade de números ausentes (NAs):", sum(is.na(dados_filtrados)), "\n")
+
+cat("\nQuantidade de valores ausentes por variável:\n")
+print(sapply(dados_filtrados, function(x) sum(is.na(x))))
+
+# Número de categórias por cada variável
+cat("\nQuantidade de categorias por variável:\n")
+print(sapply(dados_filtrados, function(x) length(unique(x))))
+
+dados_filtrados = na.omit(dados_filtrados)
+```
+
+# Tamanho do conjunto de dados
+
+```{r}
+nrow(dados_filtrados) # observações
+ncol(dados_filtrados) # variáveis
+```
+
+
+```{r}
+resultados = data.frame(
+  variavel = c("COST", "SIZE", "ALCOHOL", "REPUTAT", "COLOR", "AROMA", "TASTE"),
+  valor_ausente = c(0, 0, 0, 0, 0, 11, 0),
+  categorias = c(15, 14, 10, 11, 13, 16, 11)
+)
+resultados
+```
+
+```{r}
+# Tabela 1
+resultados_tabela = resultados %>%
+  gt() %>%
+  tab_header(
+    title = md("**Tabela 1:** Análise Exploratória dos Dados"),
+    subtitle = md("*Valores Ausentes (NAs) e Categorias*")
+  ) %>%
+  tab_source_note(
+    md("*Elaborado pelo autor.*")
+  ) %>%
+  cols_label(
+    variavel = "Variável",
+    valor_ausente = md("Valores Ausentes"),
+    categorias = md("Categorias")
+  ) %>%
+  text_case_match(
+    "COST" ~ "COST (custo do pack)",
+    "SIZE" ~ "SIZE (volume de cerveja no pack)",
+    "ALCOHOL" ~ "ALCOHOL (percentagem de álcool na bebida)",
+    "REPUTAT" ~ "REPUTAT (reputação da marca)",
+    "COLOR" ~ "COLOR (cor da bebida)",
+    "AROMA" ~ "AROMA (aroma da bebida)",
+    "TASTE" ~ "TASTE (sabor da bebida)"
+  ) %>% 
+  cols_align(
+    align = "left",   # alinha "variável" à esquerda
+    columns = variavel
+    ) %>%
+  cols_align(align = "center", 
+             columns = -variavel
+             ) %>% 
+  tab_style(
+    style = cell_fill(color = "grey90"),
+    locations = cells_body(rows = seq(2, nrow(resultados), 2))
+  ) %>% 
+  tab_options(
+    table.width = pct(100)
+  ) %>% 
+  opt_all_caps() %>% 
+  tab_options(
+    )
+resultados_tabela
+```
+
+
+# BOXPLOT: Avaliação dos Consumidores por Variável
+
+```{r}
+# dados formato longo para o boxplot
+dados_long = dados_filtrados %>%
+  pivot_longer(
+    cols = c(COST, SIZE, ALCOHOL, REPUTAT, COLOR, AROMA, TASTE),
+    names_to = "Variavel",
+    values_to = "Valor"
+  )
+
+median(dados_filtrados$COLOR)
+median(dados_filtrados$COST)
+```
+
+```{r}
+# Salva a figura
+#png(filename = "C:/Users/miche/OneDrive/Documentos/UFOP/5º período/Estatistica Multivariada/Unidade 5 - Analise Fatorial/Relatorio AF/Figuras/boxplot.png",
+#    width = 2800, height = 1800, res = 300) # parâmetros da figura: largura, altura e resolução
+
+# boxplot
+ggplot(dados_long, aes(x = factor(Variavel, 
+                                  levels = c("TASTE", "COLOR", "COST", "AROMA", "REPUTAT", "ALCOHOL", "SIZE")),
+                       y = Valor, 
+                       fill = Variavel)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.2, size = 0.5, alpha = 0.5, color = "black") +  # Pontos de dispersão
+  scale_fill_manual(
+    values = c("#2F5496", "#4F9D69", "#C00000", "#7F7F7F", "#BF8F00", "#7030A0", "#00B0A1")) +
+  labs(
+    title = "",
+    subtitle = NULL,
+    x = "",
+    y = "Escores",
+    fill = NULL
+    ) +
+  theme_minimal(base_size = 12) +
+  theme()
+```
+
+# Teste de Normalidade Multivariada: Shapiro Wilk
+
+```{r}
+# Necessário para definir o método de extração dos fatores
+
+# H0: A amostra provém de uma distribuição normal multivariada
+# Ha: A amostra não provém de uma distribuição normal multivariada
+
+mvshapiro_test(as.matrix(dados_filtrados))
+
+MVN::mvn(as.matrix(dados_filtrados), 
+         mvn_test = 'royston')
+
+# Os teste indicaram não normalidade multivariada dos dados, por essa razão, o método de extração será por meio das componentes principais  ou dos fatores principais
+```
+
+# Matriz de Correlações pelo método de Pearson
+
+```{r}
+# Usa-se correlação de Pearson quando as variáveis são contínuas ou com muitas categorias (> 8)
+matriz_de_correlacao = cor(dados_filtrados, method = "pearson")
+```
+
+# Site graficos: https://cran.r-project.org/web/packages/corrplot/vignettes/corrplot-intro.html
+
+```{r}
+testRes = cor.mtest(matriz_de_correlacao, conf.level = 0.95)
+
+# Ajustar margens do gráfico (bottom, left, top, right)
+par(family = "serif", oma = c(1.8, 0, 0, 0)) # fontes: serif, sans, mono
+
+corrplot(matriz_de_correlacao, 
+         p.mat = testRes$p, 
+         method = "circle",  # Método de visualização (square, shade, color, number, ellipse, circle)
+         type = "lower",     # Mostrar apenas triângulo inferior (lower, upper)
+         insig = "n",   # blank, n, label_sig
+         order = "hclust",   # Agrupa variáveis por similaridade (hclust, AOE, FPC, alphabet)
+         tl.srt = 40,        # Rotação dos rótulos (45 graus)
+         addCoef.col ='black', 
+         bg = "#fbf9f4", 
+         number.cex = 0.8,
+         mar = c(0, 0, 1.2, 0),     # Margens (bottom, left, top, right)
+         diag = FALSE # matriz diagonal = 1
+         )
+```
+
+```{r}
+# calculando as estatísticas descritivas do dataframe
+#describe(dados_filtrados)
+```
+
+# Rede de correlações
+
+```{r}
+# Pré-processamento dos dados
+tidy_cors = dados_filtrados %>% 
+  correlate() %>% # Calcula a matriz de correlação 
+  stretch() %>% # Transforma a matriz de correlação em um formato "longo" (tidy), com três colunas
+  filter(abs(r) > 0.3) %>%  # Filtra apenas as correlações com magnitude (valor absoluto) maior que 0.3
+  mutate(coloracao = if_else(r > 0, "Positiva", "Negativa"))  # Adiciona uma coluna edge_color que classifica as correlações
+
+# Grafo (rede)
+graph_cors = tidy_cors %>%  # Converte a tabela de correlações (tidy_cors) em um objeto de grafo (rede)
+  graph_from_data_frame(directed = FALSE) # Indica que o grafo é não direcionado (a correlação entre A e B é a mesma que entre B e A).
+```
+
+```{r}
+# Plot 
+ggraph(graph_cors, 
+       layout = "fr") +  # Force-Directed para posicionar os nós
+  geom_edge_link( # Desenha as arestas (conexões) do grafo, com propriedades mapeadas aos dados
+    aes(edge_alpha = abs(r),  # Transparência proporcional à força da correlação
+        edge_width = abs(r), # Espessura proporcional à força da correlação
+        color = coloracao), # Cores definidas pela classificação (positiva/negativa)
+    edge_linetype = "solid", # estilo visual das linhas: solid, dashed, dotdash, longdash, dotted
+    end_cap = circle(1, "mm") # Controla o espaçamento entre a aresta e o nó, evitando sobreposição.
+  ) +
+  geom_node_point(
+    size = 6, 
+    color = "grey", 
+    fill = "blue",
+    shape = 21,
+    stroke = 0.5
+  ) +
+  geom_node_text(
+    aes(label = name), 
+    color = "black",
+    size = 3.5,
+    repel = TRUE,  # Evita sobreposição
+    family = "serif"
+  ) +
+  scale_edge_color_manual(
+    values = c("Positiva" = "green", "Negativa" = "red"),
+    name = "Correlação"
+  ) +
+  scale_edge_width(range = c(0.5, 2)) +
+  labs(
+    title = "Rede de Correlações entre Variáveis",
+    subtitle = paste("Correlações |r| > 0.3"),
+    #caption = "Espessura e transparência das linhas proporcional à força da correlação"
+  ) +
+  theme_graph(base_family = "serif") +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5, size = 16),
+    plot.subtitle = element_text(hjust = 0.5, size = 12),
+    legend.position = "none"
+  )
+```
+
+# Verificação da aplicação da Análise Fatorial
+
+```{r}
+# Verificação da Adequabilidade da Amostra
+
+# Matriz R (realizado anteriormente) necessária para o cálculo do KMO
+matriz_R = cor(dados_filtrados)
+matriz_R
+```
+
+# Critério de Kaiser-Meyer-Olkin (KMO)
+
+```{r}
+KMO(matriz_R)
+
+# A adequabilidade da amostra é boa para realizarmos uma AFE (KMO = 0,67)
+
+# A medida MSA fornece o KMO para cada variável. Interpretação análoga ao KMO. 
+# No nosso caso, a variável REPUTAT apresentou MSA igual a 0.40, valor de adequabilidade insuficiente, podendo ser retirada da análise.
+```
+
+# Inserção dos resultados KMO/MSA em um data frame
+
+```{r}
+kmo_result = KMO(matriz_R)
+
+# Data frame com os resultados
+kmo_table = data.frame(
+  variavel = names(kmo_result$MSAi),
+  MSA = kmo_result$MSAi,
+  row.names = NULL
+) %>%
+  arrange(desc(MSA))  # Ordena por MSA decrescente
+
+# Adiciona o Overall MSA como uma linha extra
+overall_row = data.frame(variavel = "Overall MSA", 
+                         MSA = kmo_result$MSA)
+kmo_table = bind_rows(kmo_table, 
+                      overall_row)
+
+# Reordena variáveis
+kmo_table = kmo_table %>%
+  mutate(
+    variavel = factor(variavel, 
+                      levels = c("COST", "SIZE", "ALCOHOL", "REPUTAT", "COLOR", "AROMA", "TASTE", "Overall MSA"))
+  ) %>%
+  arrange(variavel) 
+
+```
+
+```{r}
+# Tabela 2
+kmo_table_gt = kmo_table %>%
+  gt() %>%
+  tab_header(
+    title = md("**Tabela 2:** Critério de Kaiser-Meyer-Olkin (KMO)"),
+    subtitle = md("*Análise Fatorial Exploratória*")
+  ) %>%
+  tab_source_note(
+    md("*Elaborado pelo autor.*")
+  ) %>%
+  cols_label(
+    variavel = "Variável",
+    MSA = "MSA"
+  ) %>%
+  text_case_match(
+    "COST" ~ "COST (custo do pack)",
+    "SIZE" ~ "SIZE (volume de cerveja no pack)",
+    "ALCOHOL" ~ "ALCOHOL (percentagem de álcool na bebida)",
+    "REPUTAT" ~ "REPUTAT (reputação da marca)",
+    "COLOR" ~ "COLOR (cor da bebida)",
+    "AROMA" ~ "AROMA (aroma da bebida)",
+    "TASTE" ~ "TASTE (sabor da bebida)",
+    "Overall MSA" ~ "KMO Geral"
+  ) %>% 
+  cols_align(
+    align = "left",   # alinha "variável" à esquerda
+    columns = variavel
+    ) %>%
+  cols_align(
+    align = "center", 
+    columns = -variavel
+    ) %>% 
+  fmt_number(
+    columns = MSA,
+    decimals = 2
+  ) %>%
+  tab_footnote(
+    footnote = "KMO/MSA: 0,80 - 1,00 = Excelente",
+    locations = cells_column_labels(columns = MSA)
+  ) %>%
+  tab_footnote(
+    footnote = "KMO/MSA: 0,00 - 0,50 = Insuficiente",
+    locations = cells_column_labels(columns = MSA)
+  ) %>%
+  tab_style(
+    style = cell_fill(color = "grey90"),
+    locations = cells_body(rows = seq(2, nrow(kmo_table), 2))
+  ) %>% 
+  tab_options(
+    table.width = pct(100)
+  ) %>% 
+  opt_all_caps() %>% 
+  tab_options()
+
+kmo_table_gt
+```
+
+# Teste de Esferecidade de Bartlett
+
+```{r}
+# H0: R = I (não existe correlação suficiente para aplicação da técnica multivariada)
+# Ha: R <> I (existe correlação suficiente para aplicação da técnica multivariada)
+
+n = dim(dados_filtrados)[1]
+
+cortest.bartlett(matriz_R, n)
+# significativo (p-valor ~= 0). Rejeita-se H0
+```
+
+# Matriz de Correlação R
+
+```{r}
+matriz_rcorr = rcorr(as.matrix(dados_filtrados))
+matriz_rcorr
+
+## A matriz R apresenta grupos de variáveis correlacionadas entre si e pouca correlação entre os grupos
+```
+
+# Critério de Kaiser-Guttman
+
+```{r}
+# Determinação do número de fatores: 2
+
+kaiser = sum(eigen(matriz_R)$values >= 1)
+kaiser
+```
+
+# Extração dos Fatores pelo Método das Componentes Principais
+  
+```{r}
+ext_fatores = FA(dados_filtrados,
+                 method = "PC", # PC: componentes principáis; PF: Fator Principal; ML: Máxima Verossimilhança
+                 type = 2, # type 1: utiliza matriz de variância; type 2: utiliza matriz de correlação
+                 nfactor = kaiser, # número de fatores
+                 scoresobs = "Bartlett"
+                 )
+ext_fatores$mtxresult # matriz de cargas fatoriais
+ext_fatores$mtxvar # variância explicada por cada fator
+
+# Podemos notar que os 2 fatores explicam juntos 84,70% da variação total do sistema (informação contida no sistema original)
+```
+
+# Inserção dos resultados AUTOVALORES em um data frame
+
+```{r}
+# data frame
+autovalores_fatoriais = as.data.frame(ext_fatores$mtxvar) %>% 
+  tibble::rownames_to_column("Fatores") # converte rownames para coluna (nomes das variáveis)
+```
+
+# Criação de Tabela gt() de autovalores
+
+```{r}
+# Tabela 3
+autovalores_fatoriais_gt = autovalores_fatoriais %>%
+  gt() %>%
+  tab_header(
+    title = md("**Tabela 3:** Matriz de Autovalores e Variâncias")#,
+    #subtitle = md("*Autovalores e Variâncias*")
+  ) %>%
+  tab_source_note(
+    md("*Elaborado pelo autor.*")
+  ) %>%
+  sub_missing(
+    columns = everything(),  # aplica a todas as colunas
+    missing_text = "-"       # texto de substituição
+  ) %>%
+  cols_align(
+    align = "left",   # alinha "variável" à esquerda
+    columns = Fatores
+    ) %>%
+  cols_align(align = "center", 
+             columns = -Fatores
+             ) %>% 
+  fmt_number(columns = -Fatores, 
+             decimals = 4 # quatro casas decimais
+             ) %>%
+  tab_style(
+    style = cell_fill(color = "grey90"),
+    locations = cells_body(rows = seq(2, nrow(autovalores_fatoriais), 2))
+  ) %>% 
+  tab_options(
+    table.width = pct(100)
+  ) %>% 
+  opt_all_caps() %>% 
+  tab_options()
+
+autovalores_fatoriais_gt
+```
+
+# Inserção dos resultados dos fatores em um data frame
+
+```{r}
+# data frame
+cargas_fatoriais = as.data.frame(ext_fatores$mtxresult) %>% 
+  tibble::rownames_to_column("Variável") # converte rownames para coluna (nomes das variáveis)
+```
+
+# Criação de Tabela gt()
+
+```{r}
+# Tabela 4
+cargas_fatoriais_gt = cargas_fatoriais %>%
+  gt() %>%
+  tab_header(
+    title = md("**Tabela 4:** Matriz L"),
+    subtitle = md("*Cargas Fatoriais, Comunalidades e Especificidades*")
+  ) %>%
+  tab_source_note(
+    md("*Elaborado pelo autor.*")
+  ) %>%
+  cols_label(
+    `Variável` = "Variável",
+    `Carga Fator 1` = "Fator 1",
+    `Carga Fator 2` = "Fator 2",
+    comunalidade = "Comunalidades",
+    `Variancias especificas` = "Especificidades"
+  ) %>%
+  text_case_match(
+    "COST" ~ "COST (custo do pack)",
+    "SIZE" ~ "SIZE (volume de cerveja no pack)",
+    "ALCOHOL" ~ "ALCOHOL (percentagem de álcool na bebida)",
+    "REPUTAT" ~ "REPUTAT (reputação da marca)",
+    "COLOR" ~ "COLOR (cor da bebida)",
+    "AROMA" ~ "AROMA (aroma da bebida)",
+    "TASTE" ~ "TASTE (sabor da bebida)",
+    "Variancia" ~ "Variância",
+    "% Variancia" ~ "% Variância"
+  ) %>% 
+  sub_missing(
+    columns = everything(),  # aplica a todas as colunas
+    missing_text = "-"       # texto de substituição
+  ) %>%
+  cols_align(
+    align = "left",   # alinha "variável" à esquerda
+    columns = Variável
+    ) %>%
+  cols_align(align = "center", 
+             columns = -Variável
+             ) %>% 
+  fmt_number(columns = -Variável, 
+             decimals = 2 # quatro casas decimais
+             ) %>%
+  tab_style(
+    style = cell_fill(color = "grey90"),
+    locations = cells_body(rows = seq(2, nrow(cargas_fatoriais), 2))
+  ) %>% 
+  tab_options(
+    table.width = pct(100)
+  ) %>% 
+  opt_all_caps() %>% 
+  tab_options()
+
+cargas_fatoriais_gt
+```
+
+# Análise das Comunalidades
+
+```{r}
+h2 = ext_fatores$mtxcomuna
+h2 #dados presentes na Tabela 3
+
+# Apesar de existirem variáveis inadequadas à realização da AF, o modelo conseguiu uma alta explicação para quase todas as variáveis
+```
+
+# Análise das Especificidades
+
+```{r}
+psi = ext_fatores$mtxvaresp
+psi #dados presentes na Tabela 3
+
+# o que o modelo fatorial não consegue explicar de cada variável
+```
+
+# Matriz dos Resíduos
+
+```{r}
+matriz_residuos = ext_fatores$mtxresidue
+matriz_residuos
+
+# A matriz dos resíduos do modelo está próxima de zero, tão logo considerada adequada para o número de fatores determinado: 2.
+```
+
+# Soma de quadrados dos residuos
+
+```{r}
+ext_fatores$vlrsqr
+```
+
+# Matriz L de Cargas Fatoriais: identificação dos fatores
+
+```{r}
+matriz_fatoriais = ext_fatores$mtxcarga
+matriz_fatoriais
+
+# Analisando as cargas significativas com n = 220: cargas acima de 0,40 sao significativas
+
+# COST  - Apresenta cargas cruzadas - comunalidade: 0,8420
+# SIZE  - Apresenta cargas cruzadas - comunalidade: 0,9013
+# ALCOHOL - Apresenta cargas cruzadas - comunalidade: 0,8887
+# REPUTAT  - Significativo somente no fator 01
+# COLOR  - Apresenta cargas cruzadas - comunalidade: 0,9101
+# AROMA  - Apresenta cargas cruzadas - comunalidade: 0,9184
+# TASTE  - Apresenta cargas cruzadas - comunalidade: 0,9223
+```
+
+# Rotação Varimax (ORTOGONAL)
+
+```{r}
+# Determinando a melhor solução: rotacao Varimax()
+
+rotacao_varimax = varimax(matriz_fatoriais)
+rotacao_varimax
+
+## note que a proporcao total da variacao explicada pelos 3 fatores nao muda (72,2%). O que muda eh a proporcao da variacao total explicada
+## por cada fator
+```
+
+# Matriz L Rotacionada
+
+```{r}
+matriz_L_rotacionado = unclass(rotacao_varimax$loa)
+matriz_L_rotacionado
+
+# Analisando novamente as cargas significativas (n = 220): cargas acima de 0,40 são significativas.
+
+# COST  - significativa apenas no fator 2
+# SIZE  - significativa apenas no fator 2
+# ALCOHOL - significativa apenas no fator 2
+# REPUTAT - Cargas cruzadas - comunalidade: 0,5458 - MSA: 0,76
+# COLOR  - significativa apenas no fator 1
+# AROMA  - significativa apenas no fator 1
+# TASTE  - significativa apenas no fator 1
+```
+
+```{r}
+# Análise posterior: Escores fatoriais
+
+escores = ext_fatores$mtxscores
+escores
+
+# coeficientes dos escores
+ext_fatores$coefscores
+```
+
+# Inserção dos resultados dos escores em um data frame
+
+```{r}
+# data frame
+escores_fatoriais = as.data.frame(ext_fatores$coefscores) %>% 
+  tibble::rownames_to_column("Variável") # converte rownames para coluna (nomes das variáveis)
+```
+
+# Criação de Tabela gt()
+
+```{r}
+# Tabela 5
+escores_fatoriais_gt = escores_fatoriais %>%
+  gt() %>%
+  tab_header(
+    title = md("**Tabela 5:** Matriz de Escores Fatoriais"),
+    subtitle = md("*Atributos Sensoriais e Características Quantitativas*")
+  ) %>%
+  tab_source_note(
+    md("*Elaborado pelo autor.*")
+  ) %>%
+  text_case_match(
+    "COST" ~ "COST (custo do pack)",
+    "SIZE" ~ "SIZE (volume de cerveja no pack)",
+    "ALCOHOL" ~ "ALCOHOL (percentagem de álcool na bebida)",
+    "REPUTAT" ~ "REPUTAT (reputação da marca)",
+    "COLOR" ~ "COLOR (cor da bebida)",
+    "AROMA" ~ "AROMA (aroma da bebida)",
+    "TASTE" ~ "TASTE (sabor da bebida)"
+  ) %>%
+  cols_align(
+    align = "left",   # alinha "variável" à esquerda
+    columns = Variável
+    ) %>%
+  cols_align(align = "center", 
+             columns = -Variável
+             ) %>% 
+  fmt_number(columns = -Variável, 
+             decimals = 2 # quatro casas decimais
+             ) %>%
+  tab_style(
+    style = cell_fill(color = "grey90"),
+    locations = cells_body(rows = seq(2, nrow(escores_fatoriais), 2))
+  ) %>% 
+  tab_options(
+    table.width = pct(100)
+  ) %>% 
+  opt_all_caps() %>% 
+  tab_options()
+
+escores_fatoriais_gt
+```
+
+# FORMULANDO NOVO MODELO FATORIAL DESCONSIDERANDO A VARIÁVEL REPUTAT (REPUTAÇÃO DA MARCA) POR APRESENTAR CARGA CRUZADA
+
+```{r}
+## segunda tentativa: excluir da análise a variável REPUTAT (CARGA CRUZADA)
+
+dados3 = dados_filtrados[-match(c('REPUTAT'), names(dados_filtrados))] 
+```
+
+```{r}
+## verificação da adequabilidade da amostra
+
+R3 = cor(dados3)
+R3
+```
+
+```{r}
+## A matriz de correlação indica baixa correlação entre as variáveis
+
+KMO(R3)
+
+cor_4 = rcorr(as.matrix(dados3))
+cor_4
+```
+
+```{r}
+## Determinação do número de fatores: critério de Kaiser
+
+k = sum(eigen(R3)$values>=1)
+k
+```
+
+```{r}
+## Extração dos fatores utilizando o método das componentes principais
+
+af3 = FA(dados3,method = "PC",type = 2,nfactor = k, scoresobs = "Bartlett")
+af3$mtxresult
+af3$mtxvar
+
+## Podemos notar que os 2 fatores explicam juntos 91,23% da variação total do sistema (informação contida no sistema original)
+```
+
+```{r}
+## analisando as comunalidades
+
+h23 = af3$mtxcomuna
+h23
+
+## O modelo conseguiu uma alta explicação para todas as variáveis
+```
+
+```{r}
+## especificidade: o que o modelo fatorial não consegue explicar de cada variável
+
+psi3 = af3$mtxvaresp
+psi3
+```
+
+```{r}
+## Matriz dos resíduos
+
+MRes3 = af3$mtxresidue
+MRes3
+```
+
+```{r}
+## Soma de quadrados dos resíduos
+af3$vlrsqr
+```
+
+```{r}
+## para ver toda a matriz de cargas fatoriais: identificação dos fatores
+
+L3 = af3$mtxcarga
+L3
+
+## Analisando as cargas significativas - n = 220: cargas acima de 0,40 são significativas
+
+## Solução final:
+
+# COST  - Cargas cruzadas
+# SIZE  - Cargas cruzadas
+# ALCOHOL - Cargas cruzadas
+# COLOR  - Cargas cruzadas
+# AROMA  - Cargas cruzadas
+# TASTE  - Cargas cruzadas
+```
