@@ -1,5 +1,5 @@
-# 📊 Unsupervised Latent Space Extraction via Exploratory Factor Analysis (EFA)
-### High-Dimensional Consumer Preference Mining on `AnaFatBeer` Dataset
+# 📊 Extração de Espaço Latente Não Supervisionada via Análise Fatorial Exploratória (EFA)
+### Mineração de Preferências do Consumidor de Alta Dimensão no Conjunto de Dados `AnaFatBeer`
 
 **Autor:** Michel Lima de Oliveira  
 **Domínio:** Inteligência Artificial — Aprendizado de Máquina e Mineração de Dados  
